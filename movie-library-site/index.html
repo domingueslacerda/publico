@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Movie Library</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="webjars/vue/dist/vue.global.prod.js"></script>
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="top">
+        <h1>🎬 Movie Library</h1>
+        <span v-if="snapshotDate" class="api-link">Updated on {{ snapshotDate }}</span>
+    </header>
+
+    <main>
+        <form class="search" @submit.prevent="search">
+            <div class="search-row">
+                <input v-model.trim="form.title" type="search" class="main-input" autofocus
+                       placeholder="Search by title (Portuguese, English or original) or series name…">
+                <button type="submit" class="primary">Search</button>
+            </div>
+
+            <div class="quick-row">
+                <button type="button" class="link" @click="showFilters = !showFilters">
+                    {{ showFilters ? '▾ Hide filters' : '▸ More filters' }}
+                    <span v-if="activeFilterCount" class="badge">{{ activeFilterCount }}</span>
+                </button>
+                <button v-if="hasCriteria" type="button" class="link" @click="clear">Clear all</button>
+            </div>
+
+            <div v-show="showFilters" class="filters">
+                <label>Director <input v-model.trim="form.director" placeholder="e.g. Kubrick"></label>
+                <label>Actor <input v-model.trim="form.actors" placeholder="e.g. Tom Hanks"></label>
+                <label>Year <input v-model.number="form.year" type="number" min="1880" max="2100" placeholder="e.g. 1999"></label>
+                <label>Season <input v-model.number="form.seasonNumber" type="number" min="0" placeholder="e.g. 5 (TV series only)"></label>
+                <label>Country <input v-model.trim="form.country" placeholder="e.g. France"></label>
+                <label>Language <input v-model.trim="form.language" placeholder="e.g. Portuguese"></label>
+                <label>Age rating
+                    <select v-model="form.ageRating">
+                        <option value="">Any</option>
+                        <option v-for="r in ageRatings" :key="r" :value="r">{{ r }}</option>
+                    </select>
+                </label>
+                <label class="wide">Plot contains <input v-model.trim="form.plot" placeholder="e.g. heist"></label>
+
+                <div class="wide">
+                    <div class="genre-head">
+                        <span>Genres</span>
+                        <span v-if="form.genres.length > 1" class="toggle">
+                            <label><input type="radio" v-model="form.genreMatch" value="ALL"> all of them</label>
+                            <label><input type="radio" v-model="form.genreMatch" value="ANY"> any of them</label>
+                        </span>
+                    </div>
+                    <div class="chips">
+                        <button v-for="g in genres" :key="g" type="button" class="chip"
+                                :class="{ on: form.genres.includes(g) }" @click="toggleGenre(g)">{{ g }}</button>
+                        <span v-if="!genres.length" class="muted">No genres available</span>
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        <section class="results">
+            <div v-if="error" class="notice error">{{ error }}</div>
+
+            <div v-else-if="loading" class="notice">Searching…</div>
+
+            <div v-else-if="!searched" class="notice">
+                Type a title and press Enter, or pick some filters.
+                <button type="button" class="link" @click="browseAll">Or browse all movies</button>
+            </div>
+
+            <template v-else>
+                <div class="results-head">
+                    <span>{{ results.length }} movie{{ results.length === 1 ? '' : 's' }} found</span>
+                    <label v-if="results.length > 1">Sort by
+                        <select v-model="sortBy">
+                            <option value="title">Title</option>
+                            <option value="yearDesc">Newest first</option>
+                            <option value="yearAsc">Oldest first</option>
+                            <option v-if="hasRatings" value="rating">IMDb rating</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div v-if="!results.length" class="notice">
+                    No movies match your search. Try fewer words or remove a filter.
+                </div>
+
+                <ul class="grid">
+                    <li v-for="m in sortedResults" :key="m.id" class="card" tabindex="0"
+                        @click="selected = m" @keydown.enter="selected = m">
+                        <div class="poster">
+                            <img v-if="m.poster && !brokenPosters.has(m.id)" :src="m.poster" :alt="mainTitle(m)"
+                                 loading="lazy" @error="brokenPosters.add(m.id)">
+                            <span v-else>🎞️</span>
+                        </div>
+                        <div class="card-body">
+                            <h3>{{ mainTitle(m) }}</h3>
+                            <p v-if="seriesLabel(m)" class="small series">📺 {{ seriesLabel(m) }}</p>
+                            <p v-if="otherTitle(m)" class="muted small">{{ otherTitle(m) }}</p>
+                            <p class="small">
+                                <span v-if="m.year">{{ m.year }}</span>
+                                <span v-if="m.duration"> · {{ m.duration }} min</span>
+                                <span v-if="imdbRating(m)"> · ⭐ {{ imdbRating(m) }}</span>
+                            </p>
+                            <p v-if="m.director" class="small muted">{{ m.director }}</p>
+                            <p v-if="locations(m)" class="small location">📍 {{ locations(m) }}</p>
+                        </div>
+                    </li>
+                </ul>
+            </template>
+        </section>
+    </main>
+
+    <div v-if="selected" class="overlay" @click.self="selected = null">
+        <article class="detail" role="dialog" aria-modal="true">
+            <button class="close" @click="selected = null" aria-label="Close">✕</button>
+            <div class="detail-top">
+                <img v-if="selected.poster && !brokenPosters.has(selected.id)" :src="selected.poster" alt="">
+                <div>
+                    <h2>{{ mainTitle(selected) }}</h2>
+                    <p v-if="seriesLabel(selected)" class="series">📺 {{ seriesLabel(selected) }}</p>
+                    <p v-if="otherTitle(selected)" class="muted">{{ otherTitle(selected) }}</p>
+                    <p>
+                        <span v-if="selected.year">{{ selected.year }}</span>
+                        <span v-if="selected.duration"> · {{ selected.duration }} min</span>
+                        <span v-if="selected.ratedFromAge != null"> · {{ selected.ratedFromAge }}+</span>
+                    </p>
+                    <p v-if="selected.genres" class="chips">
+                        <span v-for="g in selected.genres.split(', ')" :key="g" class="chip static">{{ g }}</span>
+                    </p>
+                    <p v-if="selected.plot">{{ selected.plot }}</p>
+                </div>
+            </div>
+
+            <dl class="facts">
+                <template v-for="f in facts(selected)" :key="f[0]">
+                    <dt>{{ f[0] }}</dt><dd>{{ f[1] }}</dd>
+                </template>
+            </dl>
+
+            <template v-if="selected.ratingSet?.length">
+                <h4>Ratings</h4>
+                <ul class="plain">
+                    <li v-for="r in selected.ratingSet" :key="r.source">{{ r.source }}: <strong>{{ r.points }}</strong>
+                        <span v-if="r.totalVotes" class="muted"> ({{ r.totalVotes.toLocaleString() }} votes)</span></li>
+                </ul>
+            </template>
+
+            <template v-if="selected.productSet?.length">
+                <h4>In the collection</h4>
+                <ul class="plain">
+                    <li v-for="p in selected.productSet" :key="p.barCode">
+                        <strong>{{ p.dvdBluray === 'BLURAY' ? 'Blu-ray' : 'DVD' }}</strong>
+                        <span v-if="p.titleCover"> “{{ p.titleCover }}”</span>
+                        — 📍 {{ locationLabel(p) }}
+                        <div v-if="p.spokenLanguages || p.subtitles" class="small muted">
+                            <span v-if="p.spokenLanguages">Audio: {{ p.spokenLanguages }}</span>
+                            <span v-if="p.spokenLanguages && p.subtitles"> · </span>
+                            <span v-if="p.subtitles">Subtitles: {{ p.subtitles }}</span>
+                        </div>
+                    </li>
+                </ul>
+            </template>
+
+            <template v-if="selected.opinionSet?.length">
+                <h4>Opinions</h4>
+                <ul class="plain">
+                    <li v-for="o in selected.opinionSet" :key="o.viewerName">
+                        {{ o.viewerName }}: <strong>{{ o.points ?? '–' }}</strong>
+                        <span v-if="o.lastViewed" class="muted small"> (seen {{ o.lastViewed.slice(0, 10) }})</span>
+                    </li>
+                </ul>
+            </template>
+
+            <p v-if="selected.imdbId">
+                <a :href="'https://www.imdb.com/title/' + selected.imdbId + '/'" target="_blank" rel="noopener">View on IMDb ↗</a>
+            </p>
+        </article>
+    </div>
+</div>
+<script src="common.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
