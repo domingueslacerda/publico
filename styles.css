@@ -57,7 +57,13 @@ button { cursor: pointer; }
 .search { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 0 12px; }
 .search-row { display: flex; gap: 8px; }
 .main-input { font-size: 1.1rem; padding: 12px 14px; }
-.quick-row { display: flex; gap: 20px; margin-top: 6px; }
+.quick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-top: 8px; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.segmented label { padding: 3px 12px; font-size: .9rem; background: var(--surface); cursor: pointer; }
+.segmented label + label { border-left: 1px solid var(--border); }
+.segmented label.on { background: var(--accent); color: #fff; }
+.segmented label:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.segmented input { position: absolute; opacity: 0; width: 0; }
 .badge {
     display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px;
     background: var(--accent); color: #fff; font-size: .75rem; text-align: center;
@@ -83,6 +89,10 @@ button { cursor: pointer; }
 .notice { padding: 32px 0; text-align: center; color: var(--muted); }
 .notice .link { display: block; margin: 8px auto 0; }
 .notice.error { color: var(--accent); }
+
+.note {
+    margin: 0 0 14px; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); font-size: .9rem;
+}
 
 .results-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 14px; color: var(--muted); }
 .results-head select { width: auto; margin-left: 6px; }

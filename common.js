@@ -2,16 +2,30 @@ const { reactive, ref, computed, onMounted, onUnmounted } = Vue;
 
 // 'title' is the main search box: it is matched against any of the titles and the series name
 const TEXT_FILTERS = ['director', 'actors', 'country', 'language', 'plot', 'ageRating'];
-const NUMBER_FILTERS = ['year', 'seasonNumber'];
+const NUMBER_FILTERS = ['year', 'seasonNumber', 'episodeNumber'];
+// '' is both; the other values are the ones of MovieType in the backend
+const TYPES = [{ value: '', label: 'All' }, { value: 'MOVIE', label: 'Movies' }, { value: 'SERIES', label: 'TV series' }];
 
 const emptyForm = () => ({
-    title: '', director: '', actors: '', year: '', seasonNumber: '', country: '', language: '', plot: '', ageRating: '',
+    title: '', type: '', director: '', actors: '', year: '', seasonNumber: '', episodeNumber: '', country: '', language: '', plot: '', ageRating: '',
     genres: [], genreMatch: 'ALL',
 });
 
 const pretty = value => value
     ? value.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     : '';
+
+// the earliest episode (lowest season, then lowest episode) of each TV series
+function firstEpisodes(episodes) {
+    const order = e => [e.seasonNumber ?? Infinity, e.episodeNumber ?? Infinity];
+    const isBefore = (a, b) => order(a)[0] - order(b)[0] || order(a)[1] - order(b)[1];
+    const firstBySeries = new Map();
+    episodes.forEach(e => {
+        const first = firstBySeries.get(e.seriesName);
+        if (!first || isBefore(e, first) < 0) firstBySeries.set(e.seriesName, e);
+    });
+    return [...firstBySeries.values()];
+}
 
 // The page logic shared by the dynamic page and the static site. They differ in the data source they give:
 // findMovies(form, params) returns the movies matching the form (params is the form as URL parameters),
@@ -25,16 +39,19 @@ function useMovieLibrary(dataSource) {
     const loading = ref(false);
     const searched = ref(false);
     const error = ref('');
+    // whether the results are the first episode of each TV series, instead of all the episodes found
+    const firstEpisodesOnly = ref(false);
     const selected = ref(null);
     const sortBy = ref('title');
     const brokenPosters = reactive(new Set());
     const activeFilterCount = computed(() =>
         [...TEXT_FILTERS, ...NUMBER_FILTERS].filter(f => form[f] !== '').length + (form.genres.length ? 1 : 0));
-    const hasCriteria = computed(() => !!form.title || activeFilterCount.value > 0);
+    const hasCriteria = computed(() => !!form.title || !!form.type || activeFilterCount.value > 0);
 
     function buildParams() {
         const params = new URLSearchParams();
         if (form.title) params.append('title', form.title);
+        if (form.type) params.append('type', form.type);
         TEXT_FILTERS.forEach(f => form[f] && params.append(f, form[f]));
         NUMBER_FILTERS.forEach(f => form[f] !== '' && params.append(f, form[f]));
         form.genres.forEach(g => params.append('genre', g));
@@ -48,7 +65,10 @@ function useMovieLibrary(dataSource) {
         error.value = '';
         syncUrl();
         try {
-            results.value = await dataSource.findMovies(form, buildParams());
+            const found = await dataSource.findMovies(form, buildParams());
+            // listing every episode of every series is too much, unless a season or an episode is asked for
+            firstEpisodesOnly.value = form.type === 'SERIES' && form.seasonNumber === '' && form.episodeNumber === '';
+            results.value = firstEpisodesOnly.value ? firstEpisodes(found) : found;
             searched.value = true;
         } catch (e) {
             error.value = 'The search failed: ' + e.message;
@@ -65,9 +85,16 @@ function useMovieLibrary(dataSource) {
     function clear() {
         Object.assign(form, emptyForm());
         results.value = [];
+        firstEpisodesOnly.value = false;
         searched.value = false;
         error.value = '';
         syncUrl();
+    }
+
+    // the toggle applies right away; a season and an episode only make sense for TV series
+    function typeChanged() {
+        if (form.type === 'MOVIE') form.seasonNumber = form.episodeNumber = '';
+        search();
     }
 
     function toggleGenre(genre) {
@@ -84,6 +111,7 @@ function useMovieLibrary(dataSource) {
     function restoreFromUrl() {
         const params = new URLSearchParams(location.search);
         form.title = params.get('title') || '';
+        form.type = TYPES.some(t => t.value === params.get('type')) ? params.get('type') : '';
         TEXT_FILTERS.forEach(f => form[f] = params.get(f) || '');
         NUMBER_FILTERS.forEach(f => form[f] = params.get(f) || '');
         form.genres = params.getAll('genre');
@@ -111,6 +139,12 @@ function useMovieLibrary(dataSource) {
         ['Director', m.director], ['Writers', m.writers], ['Cast', m.actors], ['Country', m.country],
         ['Language', m.language], ['Awards', m.awards],
     ].filter(f => f[1] && f[1] !== 'N/A');
+
+    const resultsLabel = computed(() => {
+        const noun = firstEpisodesOnly.value ? 'TV series' : form.type === 'SERIES' ? 'episode' : 'movie';
+        const plural = results.value.length === 1 || firstEpisodesOnly.value ? '' : 's';
+        return `${results.value.length} ${noun}${plural} found`;
+    });
 
     const hasRatings = computed(() => results.value.some(imdbRating));
 
@@ -142,8 +176,8 @@ function useMovieLibrary(dataSource) {
     onUnmounted(() => window.removeEventListener('keydown', onKey));
 
     return {
-        form, showFilters, genres, ageRatings, results, sortedResults, hasRatings, loading, searched, error, selected, sortBy,
-        brokenPosters, activeFilterCount, hasCriteria, search, browseAll, clear, toggleGenre,
+        form, showFilters, types: TYPES, genres, ageRatings, results, sortedResults, resultsLabel, firstEpisodesOnly, hasRatings, loading, searched, error, selected, sortBy,
+        brokenPosters, activeFilterCount, hasCriteria, search, browseAll, clear, typeChanged, toggleGenre,
         mainTitle, otherTitle, seriesLabel, imdbRating, locations, locationLabel, facts,
     };
 }

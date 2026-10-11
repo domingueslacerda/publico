@@ -8,6 +8,7 @@ function matches(movie, form) {
     if (form.title && ![movie.titlePt, movie.titleEn, movie.titleOriginal, movie.seriesName].some(t => contains(t, form.title))) {
         return false;
     }
+    if (form.type && (form.type === 'SERIES') !== (movie.seriesName != null)) return false;
     if (TEXT_FILTERS.some(f => f !== 'ageRating' && form[f] && !contains(movie[f], form[f]))) return false;
     if (form.ageRating && (movie.ageRating || '').toLowerCase() !== form.ageRating.toLowerCase()) return false;
     if (NUMBER_FILTERS.some(f => form[f] !== '' && movie[f] !== Number(form[f]))) return false;

@@ -23,6 +23,11 @@
             </div>
 
             <div class="quick-row">
+                <span class="segmented" role="radiogroup" aria-label="Type">
+                    <label v-for="t in types" :key="t.value" :class="{ on: form.type === t.value }">
+                        <input type="radio" v-model="form.type" :value="t.value" @change="typeChanged"> {{ t.label }}
+                    </label>
+                </span>
                 <button type="button" class="link" @click="showFilters = !showFilters">
                     {{ showFilters ? '▾ Hide filters' : '▸ More filters' }}
                     <span v-if="activeFilterCount" class="badge">{{ activeFilterCount }}</span>
@@ -34,7 +39,10 @@
                 <label>Director <input v-model.trim="form.director" placeholder="e.g. Kubrick"></label>
                 <label>Actor <input v-model.trim="form.actors" placeholder="e.g. Tom Hanks"></label>
                 <label>Year <input v-model.number="form.year" type="number" min="1880" max="2100" placeholder="e.g. 1999"></label>
-                <label>Season <input v-model.number="form.seasonNumber" type="number" min="0" placeholder="e.g. 5 (TV series only)"></label>
+                <label>Season <input v-model.number="form.seasonNumber" type="number" min="0" placeholder="e.g. 5 (TV series only)"
+                                     :disabled="form.type === 'MOVIE'"></label>
+                <label>Episode <input v-model.number="form.episodeNumber" type="number" min="0" placeholder="e.g. 8 (TV series only)"
+                                      :disabled="form.type === 'MOVIE'"></label>
                 <label>Country <input v-model.trim="form.country" placeholder="e.g. France"></label>
                 <label>Language <input v-model.trim="form.language" placeholder="e.g. Portuguese"></label>
                 <label>Age rating
@@ -74,7 +82,7 @@
 
             <template v-else>
                 <div class="results-head">
-                    <span>{{ results.length }} movie{{ results.length === 1 ? '' : 's' }} found</span>
+                    <span>{{ resultsLabel }}</span>
                     <label v-if="results.length > 1">Sort by
                         <select v-model="sortBy">
                             <option value="title">Title</option>
@@ -84,6 +92,10 @@
                         </select>
                     </label>
                 </div>
+
+                <p v-if="firstEpisodesOnly && results.length" class="note">
+                    ℹ️ Only the first episode of each TV series is shown. Fill in a season or an episode (under “More filters”) to see the others.
+                </p>
 
                 <div v-if="!results.length" class="notice">
                     No movies match your search. Try fewer words or remove a filter.
